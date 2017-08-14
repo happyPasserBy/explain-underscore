@@ -3,7 +3,7 @@
 /*
   建议：
       1刚开始不要一行一行跟下来敲，先了解一下库的整体结构
-      2遇到不懂的打个断点，多看几遍，断点很重要
+      2遇到不懂的打个断点，多跟踪几遍，断点很重要
       3有些内部函数使用频率很高（cb....）,这些内部函数了解清楚了后续看起来轻松不少，
 
 */
@@ -95,20 +95,20 @@
   var youngest = _.chain(stooges)
                     .sortBy(function(stooge){ return stooge.age; })
                     .value();
-  1创建了stooges对象
-  2创建youngest变量
-  3详细看一下youngest值的计算方法
-    3.1先是_.chain(stooges)这句话做了什么呢？（可以回顾一下之前的代码）
+  1 创建了stooges对象
+  2 创建youngest变量
+  3 详细看一下youngest值的计算方法
+    3.1 先是_.chain(stooges)这句话做了什么呢？（可以回顾一下之前的代码）
       调用_.chain(stooges),内部对_进行实例化，并把stooges作为_wrapped的值，并添加了一个名为_chain值为true的属性，
       最后得到的就是这样一个对象{_wrapped:[{name: 'curly', age: 25}...],_chain:true}
-    3.2继续调用
+    3.2 继续调用
       {_wrapped:[{name: 'curly', age: 25}...],_chain:true}.sortBy(function(stooge){ return stooge.age; })
                                                           .value();
       等等，这样对吗？内个什么对象调用.sortBy不报错吗？它有这个方法吗？
       是有的，你没听错，那么在哪里呢？
       请看_.mixin的这句换_.prototype[name]=function(){....}
       这句话就是在往_的原型对象中添加方法，在这句话之前的_.mixin(_)，与其内部的_.each(_.function(obj),...)就是将_上面的所有方法的地址引用传递给_.prototype上，而{_wrapped:[{name: 'curly', age: 25}...],_chain:true}对象又是_的实例对象，自然也就继承了_.prototype的方法，这也就是链式调用的原理
-    3.3最后调用value()来返回它的_wrapped就此结束
+    3.3 最后调用value()来返回它的_wrapped就此结束
     */
   _.mixin = function(obj) {
     _.each(_.functions(obj), function(name) {
