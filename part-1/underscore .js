@@ -95,7 +95,7 @@
   var youngest = _.chain(stooges)
                     .sortBy(function(stooge){ return stooge.age; })
                     .value();
-  1 创建了stooges对象
+  1 创建stooges对象
   2 创建youngest变量
   3 详细看一下youngest值的计算方法
     3.1 先是_.chain(stooges)这句话做了什么呢？（可以回顾一下之前的代码）
