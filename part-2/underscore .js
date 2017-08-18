@@ -189,22 +189,22 @@
     for (var index = 0; index < length; index++) {
       //keys有值返回属性列表里的属性，否则返回下标用于数组，
       var currentKey = keys ? keys[index] : index;
-      //将相应地值，下标，对象传入函数中，将结果报错到results中
+      //将相应地值，下标，对象传入函数中，将结果保存到results中
       results[index] = iteratee(obj[currentKey], currentKey, obj);
     }
     //返回results
     return results;
   };
 
-  //一个不断计算基础值得迭代函数，参数dir判断从头还是从尾开始迭代
+  //一个不断计算基础值的迭代函数，参数dir判断从头还是从尾开始迭代
   var createReduce = function(dir) {
     //迭代函数的核心
     var reducer = function(obj, iteratee, memo, initial) {
       var keys = !isArrayLike(obj) && _.keys(obj),
           length = (keys || obj).length,
-          //获取迭代开始的小标，参数dir在内部传入，1从头，-1从尾
+          //获取迭代开始的下标，参数dir在内部传入，1从头，-1从尾
           index = dir > 0 ? 0 : length - 1;
-          //根据initial判断memo时候有值，没有则初始化
+          //根据initial判断memo是否有值，没有则初始化
       if (!initial) {
         //根据keys（可能是数组或对象）来获取下标为index的值
         memo = obj[keys ? keys[index] : index];
@@ -296,7 +296,7 @@
   };
 
   /*
-  如果obj中有任何一个元素通过 predicate 的真值检测就返回true。一旦找到了符合条件的元素, 就直接中断对list的遍历. 
+  如果obj中有任何一个元素通过 predicate 的真值检测就返回true。一旦找到了符合条件的元素, 就直接中断对obj的遍历.
   _.some([null, 0, 'yes', false]);
   => true
   原理与_.each等相似不在多说
@@ -386,7 +386,7 @@
             //根据_.keys/_.allKeys来查找key
             keys = keysFunc(source),
             l = keys.length;
-        //遍历argumenrs中当前源对象
+        //遍历arguments中当前源对象
         for (var i = 0; i < l; i++) {
           var key = keys[i];
           //!defaults主要用于_.defaults,只有属性是undefined是才进行扩展，_.keys/_.allKeys进行覆盖或扩展
