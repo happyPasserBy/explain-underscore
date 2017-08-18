@@ -448,7 +448,7 @@
     return _.filter(obj, _.matcher(attrs));
   };
 
-  //遍历list中的每一个值，返回匹配properties所列出的属性的所有的键 - 值对的第一个值。
+  //遍历obj中的每一个值，返回匹配attrs所列出的属性的所有的键 - 值对的第一个值。
   _.findWhere = function(obj, attrs) {
     return _.find(obj, _.matcher(attrs));
   };
