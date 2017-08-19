@@ -453,6 +453,638 @@
     return _.find(obj, _.matcher(attrs));
   };
 
+  var restArgs = function(func, startIndex) {
+    //根据不同的函数调用，确定参数起始位置startIndex，+可将字符串转为数字类型
+    startIndex = startIndex == null ? func.length - 1 : +startIndex;
+    return function() {
+      //计算出额外参数的length
+      var length = Math.max(arguments.length - startIndex, 0),
+          rest = Array(length),
+          index = 0;
+      //将额外的参数保存到rest数组中，在后面调用自定义函数时将rest传入
+      for (; index < length; index++) {
+        rest[index] = arguments[index + startIndex];
+      }
+      //根据startIndex不同，所要传入的参数也不同
+      switch (startIndex) {
+        //
+        case 0: return func.call(this, rest);
+        // _.difference，_.without
+        case 1: return func.call(this, arguments[0], rest);
+        // _.invoke
+        case 2: return func.call(this, arguments[0], arguments[1], rest);
+      }
+      var args = Array(startIndex + 1);
+      for (index = 0; index < startIndex; index++) {
+        args[index] = arguments[index];
+      }
+      args[startIndex] = rest;
+      return func.apply(this, args);
+    };
+  };
+  
+  /*
+  在obj的每个元素上执行path方法。 任何传递给invoke的额外参数 args，
+  invoke都会在调用methodName方法的时候传递给它。
+  _.invoke([[5, 1, 7], [3, 2, 1]], 'sort');
+  => [[1, 5, 7], [1, 2, 3]]
+  */
+  _.invoke = restArgs(function(obj, path, args) {
+    var contextPath, func;
+    if (_.isFunction(path)) {
+      func = path;
+    } else if (_.isArray(path)) {
+      contextPath = path.slice(0, -1);
+      path = path[path.length - 1];
+    }
+    //遍历obj,对每个值执行自定义函数
+    return _.map(obj, function(context) {
+      var method = func;
+      if (!method) {
+        if (contextPath && contextPath.length) {
+          context = deepGet(context, contextPath);
+        }
+        if (context == null) return void 0;
+        method = context[path];
+      }
+      return method == null ? method : method.apply(context, args);
+    });
+  });
+
+
+  /*
+  返回obj中的最大值。如果传递iteratee参数，iteratee将作为obj中每个值的排序依据。如果obj为空，将返回-Infinity
+  var stooges = [{name: 'moe', age: 40}, {name: 'larry', age: 50}, {name: 'curly', age: 60}];
+  _.max(stooges, function(stooge){ return stooge.age; });
+  => {name: 'curly', age: 60};
+  */
+  _.max = function(obj, iteratee, context) {
+    var result = -Infinity, lastComputed = -Infinity,
+        value, computed;
+    //判断数组是否是由对象组成
+    if (iteratee == null || (typeof iteratee == 'number' && typeof obj[0] != 'object') && obj != null) {
+      obj = isArrayLike(obj) ? obj : _.values(obj);
+      //进行遍历获取最大值
+      for (var i = 0, length = obj.length; i < length; i++) {
+        value = obj[i];
+        if (value != null && value > result) {
+          result = value;
+        }
+      }
+    } else {
+      iteratee = cb(iteratee, context);
+      _.each(obj, function(v, index, list) {
+        computed = iteratee(v, index, list);
+        //注意 || &&的优先级，
+        if (computed > lastComputed || computed === -Infinity && result === -Infinity) {
+          result = v;
+          lastComputed = computed;
+        }
+      });
+    }
+    return result;
+  };
+
+  //返回obj中的最小值，与_.max相似
+  _.min = function(obj, iteratee, context) {
+    var result = Infinity, lastComputed = Infinity,
+        value, computed;
+    if (iteratee == null || (typeof iteratee == 'number' && typeof obj[0] != 'object') && obj != null) {
+      obj = isArrayLike(obj) ? obj : _.values(obj);
+      for (var i = 0, length = obj.length; i < length; i++) {
+        value = obj[i];
+        if (value != null && value < result) {
+          result = value;
+        }
+      }
+    } else {
+      iteratee = cb(iteratee, context);
+      _.each(obj, function(v, index, list) {
+        computed = iteratee(v, index, list);
+        if (computed < lastComputed || computed === Infinity && result === Infinity) {
+          result = v;
+          lastComputed = computed;
+        }
+      });
+    }
+    return result;
+  };
+
+  //获取min与max之间的随机数
+  _.random = function(min, max) {
+    if (max == null) {
+      max = min;
+      min = 0;
+    }
+    return min + Math.floor(Math.random() * (max - min + 1));
+  };
+
+  /*
+  从 obj中产生一个随机样本。传递一个数字表示从obj中返回n个随机元素。否则将返回一个单一的随机项。
+  _.sample([1, 2, 3, 4, 5, 6], 3);
+  => [1, 6, 2]
+  */
+  _.sample = function(obj, n, guard) {
+    //没有n就随机一个
+    if (n == null || guard) {
+      if (!isArrayLike(obj)) obj = _.values(obj);
+      return obj[_.random(obj.length - 1)];
+    }
+    var sample = isArrayLike(obj) ? _.clone(obj) : _.values(obj);
+    var length = getLength(sample);
+    //防止n大于obj的长度
+    n = Math.max(Math.min(n, length), 0);
+    var last = length - 1;
+    //此处为打乱数组顺序
+    for (var index = 0; index < n; index++) {
+      var rand = _.random(index, last);
+      var temp = sample[index];
+      sample[index] = sample[rand];
+      sample[rand] = temp;
+    }
+    //截取打乱后的数组
+    return sample.slice(0, n);
+  };
+
+  //回一个随机乱序的obj副本
+  _.shuffle = function(obj) {
+    return _.sample(obj, Infinity);
+  };
+
+  /*
+  返回一个排序后的list拷贝副本。如果传递iteratee参数，iteratee将作为list中每个值的排序依据。
+  迭代器也可以是字符串的属性的名称进行排序的(比如 length)
+  _.sortBy([1, 2, 3, 4, 5, 6])
+  => [1, 2, 3, 4, 5, 6]
+  */
+  _.sortBy = function(obj, iteratee, context) {
+    var index = 0;
+    iteratee = cb(iteratee, context);
+    return _.pluck(_.map(obj, function(value, key, list) {
+      return {
+        value: value,
+        index: index++,
+        criteria: iteratee(value, key, list)
+      };
+    }).sort(function(left, right) {
+      var a = left.criteria;
+      var b = right.criteria;
+      if (a !== b) {
+        if (a > b || a === void 0) return 1;
+        if (a < b || b === void 0) return -1;
+      }
+      return left.index - right.index;
+    }), 'value');
+  };
+
+   //用于分组的闭包函数
+  var group = function(behavior, partition) {
+    return function(obj, iteratee, context) {
+      //根据partition，返回不同结构
+      var result = partition ? [[], []] : {};
+      iteratee = cb(iteratee, context);
+      _.each(obj, function(value, index) {
+        //根据传入的回调确定筛选值
+        var key = iteratee(value, index, obj);
+        //执行分组函数
+        behavior(result, value, key);
+      });
+      return result;
+    };
+  };
+
+  /*
+  把一个集合分组为多个集合，通过 iterator 返回的结果进行分组. 如果 iterator 是一个字符串而不是函数, 
+  那么将使用 iterator 作为各元素的属性名来对比进行分组.
+  _.groupBy([1.3, 2.1, 2.4], function(num){ return Math.floor(num); });
+  => {1: [1.3], 2: [2.1, 2.4]}
+  */
+  _.groupBy = group(function(result, value, key) {
+    //result为{}结构，有则push,无则添加
+    if (_.has(result, key)) result[key].push(value); else {result[key] = [value]};
+  });
+
+  /*
+  给定一个list，和 一个用来返回一个在列表中的每个元素键 的iterator 函数（或属性名）， 返回一个每一项索引的对象。
+  和groupBy非常像，但是当你知道你的键是唯一的时候可以使用indexBy
+  var stooges = [{name: 'moe', age: 40}, {name: 'larry', age: 50}, {name: 'curly', age: 60}];
+  _.indexBy(stooges, 'age');
+  => {
+    "40": {name: 'moe', age: 40},
+    "50": {name: 'larry', age: 50},
+    "60": {name: 'curly', age: 60}
+  }
+  */
+  _.indexBy = group(function(result, value, key) {
+    result[key] = value;
+  });
+
+  /*
+  排序一个列表组成一个组，并且返回各组中的对象的数量的计数。类似groupBy，但是不是返回列表的值，
+  而是返回在该组中值的数目
+  _.countBy([1, 2, 3, 4, 5], function(num) {
+    return num % 2 == 0 ? 'even': 'odd';
+  });
+  => {odd: 3, even: 2}
+  */
+  _.countBy = group(function(result, value, key) {
+    if (_.has(result, key)) result[key]++; else result[key] = 1;
+  });
+  
+  /*
+  拆分一个数组（array）为两个数组： 第一个数组其元素都满足predicate迭代函数， 
+  而第二个的所有元素均不能满足predicate迭代函数
+  _.partition([0, 1, 2, 3, 4, 5], isOdd);
+  => [[1, 3, 5], [0, 2, 4]]
+  */
+  _.partition = group(function(result, value, pass) {
+    result[pass ? 0 : 1].push(value);
+  }, true);
+  
+  //跟utf-16有关，感兴趣的可以查一下
+  var reStrSymbol = /[^\ud800-\udfff]|[\ud800-\udbff][\udc00-\udfff]|[\ud800-\udfff]/g;
+  /*
+  将obj转换成一个数组
+  */
+  _.toArray = function(obj) {
+    if (!obj) {return []};
+    if (_.isArray(obj)) return slice.call(obj);
+    if (_.isString(obj)) {
+      return obj.match(reStrSymbol);
+    }
+    if (isArrayLike(obj)) return _.map(obj, _.identity);
+    return _.values(obj);
+  };
+
+  //获取obj长度
+  _.size = function(obj) {
+    if (obj == null) return 0;
+    return isArrayLike(obj) ? obj.length : _.keys(obj).length;
+  };
+
+
+  //数组相关函数
+  //******************接下来讲过的函数注释会逐渐减少，建议遇到问题打个debug,跟踪一下，会便于理解**********************************************
+
+  /*
+  返回数组中除了最后一个元素外的其他全部元素。传递 n参数将从结果中排除从最后一个开始的n个元素
+  _.initial([5, 4, 3, 2, 1]);
+  => [5, 4, 3, 2]
+  */
+  _.initial = function(array, n, guard) {
+    return slice.call(array, 0, Math.max(0, array.length - (n == null || guard ? 1 : n)));
+  };
+
+  /*
+  返回array（数组）的第一个元素。传递 n参数将返回数组中从第一个元素开始的n个元素
+  _.first([5, 4, 3, 2, 1]);
+  => 5
+  */ 
+   _.first = _.head = _.take = function(array, n, guard) {
+    if (array == null || array.length < 1) return void 0;
+    if (n == null || guard) return array[0];
+    //巧用_.initial
+    return _.initial(array, array.length - n);
+  };
+
+
+  /*
+  与_.initial相反
+  _.last([5, 4, 3, 2, 1]);
+  => 1
+  */
+  _.last = function(array, n, guard) {
+    if (array == null || array.length < 1) return void 0;
+    if (n == null || guard) return array[array.length - 1];
+    return _.rest(array, Math.max(0, array.length - n));
+  };
+
+  /*
+  与_.first相反
+  _.rest([5, 4, 3, 2, 1]);
+  => [4, 3, 2, 1]
+  */
+  _.rest = _.tail = _.drop = function(array, n, guard) {
+    return slice.call(array, n == null || guard ? 1 : n);
+  };
+
+  /*
+  返回一个除去所有false值的 array副本, false, null, 0，-0, "", undefined 和 NaN 都是false值.
+  _.compact([0, 1, false, 2, '', 3]);
+  => [1, 2, 3]
+  */
+  _.compact = function(array) {
+    return _.filter(array, Boolean);
+  };
+
+  /*
+  用于数组降维的递归函数
+  */
+  var flatten = function(input, shallow, strict, output) {
+    output = output || [];
+    var idx = output.length;
+    //遍历当前层
+    for (var i = 0, length = getLength(input); i < length; i++) {
+      var value = input[i];
+      if (isArrayLike(value) && (_.isArray(value) || _.isArguments(value))) {
+        //只展开一层
+        if (shallow) {
+          var j = 0, len = value.length;
+          while (j < len) output[idx++] = value[j++];
+        } else {
+        //递归调用，将多维数组转为一维数组，将output作为参数传递，传递的只是地址，操作的是同一个output
+          flatten(value, shallow, strict, output);
+          //从新获取长度
+          idx = output.length;
+        }
+      } else if (!strict) {
+        output[idx++] = value;
+      }
+    }
+    return output;
+  };
+
+  /*
+  将一个嵌套多层的数组 array（数组） (嵌套可以是任何层数)转换为只有一层的数组。 如果你传递 shallow参数，数组将只减少一维的嵌套
+  _.flatten([1, [2], [3, [[4]]]]);
+  => [1, 2, 3, 4];
+  */
+  _.flatten = function(array, shallow) {
+    return flatten(array, shallow, false);
+  };
+
+  /*
+  类似于without，但返回的值来自array参数数组，并且不存在于other 数组
+  _.difference(array, *others)
+  _.difference([1, 2, 3, 4, 5], [5, 2, 10]);
+  => [1, 3, 4]
+  */
+  _.difference = restArgs(function(array, rest) {
+    //others可能是多维数组，将others转为一维数组
+    rest = flatten(rest, true, true);
+    //从array中筛选出不存在rest中的值
+    return _.filter(array, function(value){
+      return !_.contains(rest, value);
+    });
+  });
+
+  /*
+  返回一个删除所有values值后的 array副本
+  _.without([1, 2, 1, 0, 3, 1, 4], 0, 1);
+  => [2, 3, 4]
+  */
+  _.without = restArgs(function(array, otherArrays) {
+    return _.difference(array, otherArrays);
+  });
+
+
+
+  /*
+  返回 array去重后的副本, 使用 === 做相等测试. 如果您确定 array 已经排序, 那么给 isSorted 参数传递 true值, 此函数将运行的更快的算法.
+  如果要处理对象数组([{},{}]), 传参 iterator 来获取要对比的属性
+  _.uniq([1, 2, 1, 3, 1, 4]);
+  => [1, 2, 3, 4]
+  */
+  _.uniq = _.unique = function(array, isSorted, iteratee, context) {
+    //此处判断是防止isSorted没传，后边参数补齐错位，_.uniq([],function(){..},{})
+    if (!_.isBoolean(isSorted)) {
+      context = iteratee;
+      iteratee = isSorted;
+      isSorted = false;
+    }
+    if (iteratee != null) iteratee = cb(iteratee, context);
+    var result = [];
+    var seen = [];
+    for (var i = 0, length = getLength(array); i < length; i++) {
+      var value = array[i],
+          computed = iteratee ? iteratee(value, i, array) : value;
+      //判断前后两个临近值是否相等
+      if (isSorted) {
+        if (!i || seen !== computed) result.push(value);
+        seen = computed;
+      } else if (iteratee) {
+        //针对于[{},{}],判断是否重复
+        if (!_.contains(seen, computed)) {
+          seen.push(computed);
+          result.push(value);
+        }
+      } else if (!_.contains(result, value)) {
+        //针对于[],判断是否重复
+        result.push(value);
+      }
+    }
+    return result;
+  };
+
+  /*
+  返回传入的 arrays（数组）并集：按顺序返回，返回数组的元素是唯一的，可以传入一个或多个 arrays
+  _.union([1, 2, 3], [101, 2, 1, 10], [2, 1]);
+  => [1, 2, 3, 101, 10]
+  */
+  _.union = restArgs(function(arrays) {
+    return _.uniq(flatten(arrays, true, true));
+  });
+
+  /*
+  返回传入 arrays（数组）交集。结果中的每个值是存在于传入的每个arrays（数组）里
+  _.intersection([1, 2, 3], [101, 2, 1, 10], [2, 1]);
+  => [1, 2] 
+  */
+  _.intersection = function(array) {
+    var result = [];
+    //array是声明的第一个参数，arguments.length则是获取所有参数的个数（声明或未声明）
+    var argsLength = arguments.length;
+    //用于检测交集，检测arguments中的任何一个都可以，此处是第一个
+    for (var i = 0, length = getLength(array); i < length; i++) {
+      var item = array[i];
+      //如果result有当前值，就跳过
+      if (_.contains(result, item)) continue;
+      var j;
+      //检测所有数组是否含有当前值
+      for (j = 1; j < argsLength; j++) {
+        if (!_.contains(arguments[j], item)) break;
+      }
+      //如果j等于argsLength说明所有数组检测完毕，进行push
+      if (j === argsLength) result.push(item);
+    }
+    return result;
+  };
+
+
+  /*
+  返回一个根据下标进行重组后的数组
+  _.unzip([["moe", 30, true], ["larry", 40, false], ["curly", 50, false]]);
+  => [['moe', 'larry', 'curly'], [30, 40, 50], [true, false, false]]
+  */
+  _.unzip = function(array) {
+    var length = array && _.max(array, getLength).length || 0;
+    var result = Array(length);
+
+    for (var index = 0; index < length; index++) {
+      result[index] = _.pluck(array, index);
+    }
+    return result;
+  };
+
+  //与_.unzip相似
+  _.zip = restArgs(_.unzip);
+
+  /*
+  将数组转换为对象。传递任何一个单独[key, value]对的列表，或者一个键的列表和一个值得列表。 如果存在重复键，最后一个值将被返回
+  _.object(['moe', 'larry', 'curly'], [30, 40, 50]);
+  => {moe: 30, larry: 40, curly: 50}
+  _.object([['moe', 30], ['larry', 40], ['curly', 50]]);
+  => {moe: 30, larry: 40, curly: 50}
+  */
+  _.object = function(list, values) {
+    var result = {};
+    for (var i = 0, length = getLength(list); i < length; i++) {
+      //根据values判断参数结构
+      if (values) {
+        result[list[i]] = values[i];
+      } else {
+        result[list[i][0]] = list[i][1];
+      }
+    }
+    return result;
+  };
+
+  //闭包函数，跟句dir不同，决定从左侧或右侧查找
+  var createPredicateIndexFinder = function(dir) {
+    return function(array, predicate, context) {
+      predicate = cb(predicate, context);
+      var length = getLength(array);
+      //判断从左还是从右
+      var index = dir > 0 ? 0 : length - 1;
+      for (; index >= 0 && index < length; index += dir) {
+        //符合条件返回下标
+        if (predicate(array[index], index, array)) return index;
+      }
+      return -1;
+    };
+  };
+
+  /*
+  从左侧开始根据predicate从array中筛选出符合条件的值，返回其下标，predicate返回true则中断查找，没有则返回-1
+  _.findIndex(array, predicate, [context]) 
+  _.findIndex([4, 6, 8, 5,12], function(v){return v%2!==0});
+  */
+  _.findIndex = createPredicateIndexFinder(1);
+  //从右侧开始，与 _.findIndex相似
+  _.findLastIndex = createPredicateIndexFinder(-1);
+
+  /*
+  使用二分查找确定obj在已经排序好的array中的位置序号， obj按此序号插入能保持array原有的排序。 如果提供iteratee函数，
+  iteratee将作为array排序的依据，包括你传递的 obj 
+  var stooges = [{name: 'moe', age: 40}, {name: 'curly', age: 60}];
+  _.sortedIndex(stooges, {name: 'larry', age: 50}, 'age');
+  => 1
+  */ 
+  _.sortedIndex = function(array, obj, iteratee, context) {
+    iteratee = cb(iteratee, context, 1);
+    var value = iteratee(obj);
+    var low = 0, high = getLength(array);
+    //二分查找
+    while (low < high) {
+      var mid = Math.floor((low + high) / 2);
+      if (iteratee(array[mid]) < value) low = mid + 1; else high = mid;
+    }
+    return low;
+  };
+
+  //
+  var createIndexFinder = function(dir, predicateFind, sortedIndex) {
+    return function(array, item, idx) {
+      var i = 0, length = getLength(array);
+      //判断是否用下标查找
+      if (typeof idx == 'number') {
+        //判断从左还是从右开始查找_.indexOf/_.lastIndexOf
+        //idx可正可负
+        if (dir > 0) {
+          //_.indexOf 计算查找起始位置
+          i = idx >= 0 ? idx : Math.max(idx + length, i);
+        } else {
+          //_.lastIndexOf 计算查找起始位置
+          length = idx >= 0 ? Math.min(idx + 1, length) : idx + length + 1;
+        }
+      } else if (sortedIndex && idx && length) {
+      //判断是否使用二分查找
+        idx = sortedIndex(array, item);
+        return array[idx] === item ? idx : -1;
+      }
+      //判断是否是NaN
+      if (item !== item) {
+        //从起始位置截取到尾部数组，依次判断为NaN的值
+        idx = predicateFind(slice.call(array, i, length), _.isNaN);
+        return idx >= 0 ? idx + i : -1;
+      }
+      //idx = dir > 0 ? i : length - 1此三元判断从左还是右开始遍历，
+      for (idx = dir > 0 ? i : length - 1; idx >= 0 && idx < length; idx += dir) {
+        if (array[idx] === item) return idx;
+      }
+      return -1;
+    };
+  };
+
+  /*
+  _.indexOf(array, value, [isSorted]) 
+  返回value在该 array 中的索引值，如果value不存在 array中就返回-1。使用原生的indexOf 函数，除非它失效。如果您正在使用一个大数组，你知道数组已经排序，
+  传递true给isSorted将更快的用二进制搜索..,或者，传递一个数字作为第三个参数，为了在给定的索引的数组中寻找第一个匹配值。
+  _.indexOf([1, 2, 3], 2);
+  => 1
+  */
+  _.indexOf = createIndexFinder(1, _.findIndex, _.sortedIndex);
+  //与_.indexOf功能相反，从左往右，实现原理相似
+  _.lastIndexOf = createIndexFinder(-1, _.findLastIndex);
+
+  /*
+  一个用来创建整数灵活编号的列表的函数，便于each 和 map循环。如果省略start则默认为 0；step 默认为 1.返回一个从start 到stop的整数的列表，
+  用step来增加 （或减少）独占。值得注意的是，如果stop值在start前面（也就是stop值小于start值），那么值域会被认为是零长度，而不是负增长。
+  -如果你要一个负数的值域 ，请使用负数step
+  _.range(0, 30, 5);
+  => [0, 5, 10, 15, 20, 25]
+  */
+  _.range = function(start, stop, step) {
+    //如果没传stop则stop=start,start=0
+    if (stop == null) {
+      stop = start || 0;
+      start = 0;
+    }
+    //如果没传stop则判断递增或递减
+    if (!step) {
+      step = stop < start ? -1 : 1;
+    }
+    //计算循环次数
+    var length = Math.max(Math.ceil((stop - start) / step), 0);
+    var range = Array(length);
+    //循环，start也要不断计算，以便赋值
+    for (var idx = 0; idx < length; idx++, start += step) {
+      range[idx] = start;
+    }
+
+    return range;
+  };
+
+  /*
+  用于切割数组,array为源数组，count为切割间距
+  _.chunk([1,2,3,4,5,6],2)
+  => [[1,2],[3,4],[5,6]]
+  */
+  _.chunk = function(array, count) {
+    //防止count为空
+    if (count == null || count < 1) return [];
+
+    var result = [];
+    var i = 0, length = array.length;
+    while (i < length) {
+      //循环切割时不断叠加i来计算当前切割位置与个数，
+      result.push(slice.call(array, i, i += count));
+    }
+    return result;
+  };
+
+  
+
 
   /*
   链式函数
