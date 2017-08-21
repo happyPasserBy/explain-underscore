@@ -453,6 +453,7 @@
     return _.find(obj, _.matcher(attrs));
   };
 
+  //将返回一个闭包函数，此函数将this绑定func上，并根据参数不同进行传值
   var restArgs = function(func, startIndex) {
     //根据不同的函数调用，确定参数起始位置startIndex，+可将字符串转为数字类型
     startIndex = startIndex == null ? func.length - 1 : +startIndex;
@@ -467,11 +468,11 @@
       }
       //根据startIndex不同，所要传入的参数也不同
       switch (startIndex) {
-        //
+        // _.union,_.zip,_.debounce
         case 0: return func.call(this, rest);
-        // _.difference，_.without
+        // _.difference,_.without,_.partial
         case 1: return func.call(this, arguments[0], rest);
-        // _.invoke
+        // _.invoke,_.bind,_.delay
         case 2: return func.call(this, arguments[0], arguments[1], rest);
       }
       var args = Array(startIndex + 1);
@@ -1083,124 +1084,204 @@
     return result;
   };
 
-  // Function (ahem) Functions
+  //与函数相关函数
   // ------------------
 
-  // Determines whether to execute a function as a constructor
-  // or a normal function with the provided arguments.
+  //bind核心函数
   var executeBound = function(sourceFunc, boundFunc, context, callingContext, args) {
+    //将restArgs返回的函数进行非 new 调用
     if (!(callingContext instanceof boundFunc)) return sourceFunc.apply(context, args);
+    //将restArgs返回的函数进行 new 调用
+    //此处做了模拟了new 操作符，详见请所搜new做的四件事
+    //baseCreate设置原型，返回一个继承sourceFunc.prototype的原型对象
     var self = baseCreate(sourceFunc.prototype);
+    //如果sourceFunc里有返回值，并且是对象类型则返回此对象
     var result = sourceFunc.apply(self, args);
     if (_.isObject(result)) return result;
+    //否则返回继承原型的对象
     return self;
   };
 
-  // Create a function bound to a given object (assigning `this`, and arguments,
-  // optionally). Delegates to **ECMAScript 5**'s native `Function.bind` if
-  // available.
+  /*
+  bind_.bind(function, object, *arguments)
+  绑定函数 function 到对象 object 上, 也就是无论何时调用函数, 函数里的 this 都指向这个 object. 任意可选参数 arguments 可以传递给函数 function , 
+  可以填充函数所需要的参数
+  var func = function(greeting){ return greeting + ': ' + this.name };
+  func = _.bind(func, {name: 'moe'}, 'hi');
+  func();
+  => 'hi: moe'
+  */
   _.bind = restArgs(function(func, context, args) {
+    //如果绑定对象不是函数抛出错误
     if (!_.isFunction(func)) throw new TypeError('Bind must be called on a function');
+    //有可能将restArgs返回的函数进行new调用，executeBound里将进行判断
     var bound = restArgs(function(callArgs) {
       return executeBound(func, bound, context, this, args.concat(callArgs));
     });
     return bound;
   });
 
-  // Partially apply a function by creating a version that has had some of its
-  // arguments pre-filled, without changing its dynamic `this` context. _ acts
-  // as a placeholder by default, allowing any combination of arguments to be
-  // pre-filled. Set `_.partial.placeholder` for a custom placeholder argument.
+  /*
+  _.partial(function, *arguments) 
+  局部应用一个函数填充在任意个数的 arguments，不改变其动态this值。和bind方法很相近。你可以传递_ 给arguments列表来指定一个不预先填充，但在调用时提供的参数
+  var subtract = function(a, b) { return b - a; };
+  sub5 = _.partial(subtract, 5);
+  sub5(20);
+  => 15
+  subFrom20 = _.partial(subtract, _, 20);
+  subFrom20(5);
+  => 15
+  */
   _.partial = restArgs(function(func, boundArgs) {
+    //获取占位符_
     var placeholder = _.partial.placeholder;
     var bound = function() {
+      //length获取调用_.partial时绑定的参数列表长度
       var position = 0, length = boundArgs.length;
       var args = Array(length);
+      //用来检测_.partial绑定是的占位符，有则根据arguments来填充，无则返回原值，最后返回参数数组
       for (var i = 0; i < length; i++) {
         args[i] = boundArgs[i] === placeholder ? arguments[position++] : boundArgs[i];
       }
+      //占位符的参数填充完毕后，将剩余的参数添加到参数数组
       while (position < arguments.length) args.push(arguments[position++]);
+      //bind核心函数
       return executeBound(func, bound, this, this, args);
     };
     return bound;
   });
-
+  //设置_.partial的占位符
   _.partial.placeholder = _;
 
-  // Bind a number of an object's methods to that object. Remaining arguments
-  // are the method names to be bound. Useful for ensuring that all callbacks
-  // defined on an object belong to it.
+  /*
+  _.bindAll(object, *methodNames) 
+  把methodNames参数指定的一些方法绑定到object上，这些方法就会在对象的上下文环境中执行。绑定函数用作事件处理函数时非常便利，
+  否则函数被调用时this一点用也没有。methodNames参数是必须的。
+  var buttonView = {
+    label  : 'underscore',
+    fun: function(){ console.log('clicked: ' + this.label); },
+  };
+  _.bindAll(buttonView,['fun']);
+  var outFun=buttonView.fun;
+  outFun()
+  => 'clicked:underscore'
+  
+  */
   _.bindAll = restArgs(function(obj, keys) {
     keys = flatten(keys, false, false);
     var index = keys.length;
+    //没有绑定函数抛出错误
     if (index < 1) throw new Error('bindAll must be passed function names');
+    //循环绑定
     while (index--) {
       var key = keys[index];
+      //将当前对象内部方法重新赋值为绑定后的函数
       obj[key] = _.bind(obj[key], obj);
     }
   });
 
-  // Memoize an expensive function by storing its results.
+  /*
+  Memoizes方法可以缓存某函数的计算结果。对于耗时较长的计算是很有帮助的。如果传递了 hasher 参数，
+  就用 hasher 的返回值作为key存储函数的计算结果。hasher 默认使用function的第一个参数作为key。
+  memoized值的缓存可作为返回函数的cache属性
+  var fun=_.memoize(function(n){return 'value'+n*2})
+  for(var i=0;i<5;i++){
+    fun(i)
+  }
+  => {0: "value:0", 1: "value:2", 2: "value:4", 3: "value:6", 4: "value:8"}
+  */
   _.memoize = function(func, hasher) {
     var memoize = function(key) {
       var cache = memoize.cache;
+      //判断是否传入hasher，传入则用hasher的返回值作为key,无则返回第一个参数作为key
       var address = '' + (hasher ? hasher.apply(this, arguments) : key);
+      //如果key存在cache中，重新赋值
       if (!_.has(cache, address)) cache[address] = func.apply(this, arguments);
       return cache[address];
     };
+    //以空对象作为缓存容器
     memoize.cache = {};
     return memoize;
   };
 
-  // Delays a function for the given number of milliseconds, and then calls
-  // it with the arguments supplied.
+  /*
+  _.delay(function, wait, *arguments) 
+  类似setTimeout，等待wait毫秒后调用function。如果传递可选的参数arguments，当函数function执行时，
+  arguments 会作为参数传入
+  */
   _.delay = restArgs(function(func, wait, args) {
     return setTimeout(function() {
       return func.apply(null, args);
     }, wait);
   });
 
-  // Defers a function, scheduling it to run after the current call stack has
-  // cleared.
+  /*
+  延迟调用function直到当前调用栈清空为止，类似使用延时为0的setTimeout方法。对于执行开销大的计算和无阻塞UI线程的HTML渲染时候非常有用。
+  如果传递arguments参数，当函数function执行时， arguments 会作为参数传入
+  结合了 _.partial与_.delay，
+  */
   _.defer = _.partial(_.delay, _, 1);
 
-  // Returns a function, that, when invoked, will only be triggered at most once
-  // during a given window of time. Normally, the throttled function will run
-  // as much as it can, without ever going more than once per `wait` duration;
-  // but if you'd like to disable the execution on the leading edge, pass
-  // `{leading: false}`. To disable execution on the trailing edge, ditto.
+  //获取时间，1970-1-1到现在的毫秒数
+  _.now = Date.now || function() {
+    return new Date().getTime();
+  };
+
+
+  /*
+  创建并返回一个像节流阀一样的函数，当重复调用函数的时候，最多每隔 wait毫秒调用一次该函数。对于想控制一些触发频率较高的事件有帮助
+  默认情况下，throttle将在你调用的第一时间尽快执行这个function，并且，如果你在wait周期内调用任意次数的函数，都将尽快的被覆盖。
+  如果你想禁用第一次首先执行的话，传递{leading: false}，还有如果你想禁用最后一次执行的话，传递{trailing: false}
+  var throttled = _.throttle(function(){console.log('scroll')}, 100);
+  $(window).scroll(throttled);
+  */
   _.throttle = function(func, wait, options) {
     var timeout, context, args, result;
     var previous = 0;
+    //没传配置项则为空对象
     if (!options) options = {};
-
+    //用于准确计时的函数
     var later = function() {
+      //如果设置了options.leading=false则返回0,否则_.now()
+      //注意，这里说的首次调用并非是函数的第一次调用，而是函数频繁调用阶段的第一次调用
       previous = options.leading === false ? 0 : _.now();
+      //老惯例，清空
       timeout = null;
       result = func.apply(context, args);
       if (!timeout) context = args = null;
     };
 
     var throttled = function() {
+      //获取当前时间，用于计时
       var now = _.now();
+      //!previous判断是否是第一次调用，options.leading === false返回true说明想禁用第一次
       if (!previous && options.leading === false) previous = now;
+      //相差时间=规定间隔时间-（当前执行时间-上次执行时间）
       var remaining = wait - (now - previous);
       context = this;
       args = arguments;
+      //判断相差时间是否大于了规定间隔时间，remaining > wait不知什么情况上次时间大于当前时间(有可能跟回调与任务队列有关，但没有想出详细的场景)
       if (remaining <= 0 || remaining > wait) {
+        //第一次进入时并没有定时器无需清空
+        //此处应注意的是js引擎线程与任务处理队列，
         if (timeout) {
           clearTimeout(timeout);
           timeout = null;
         }
+        //将当前时间设置为上次时间
         previous = now;
+        //绑定并执行函数
         result = func.apply(context, args);
+        //清空上下文对象context与参数对象args
         if (!timeout) context = args = null;
       } else if (!timeout && options.trailing !== false) {
+      //判断定时器是否启动且不禁用最后一次
+        //此处定时器，是如果当前相差时间不<=0,则将相差时间传入定时器，已确保函数的准确调用时间
         timeout = setTimeout(later, remaining);
       }
       return result;
     };
-
+    //手动清空方法
     throttled.cancel = function() {
       clearTimeout(timeout);
       previous = 0;
@@ -1210,30 +1291,38 @@
     return throttled;
   };
 
-  // Returns a function, that, as long as it continues to be invoked, will not
-  // be triggered. The function will be called after it stops being called for
-  // N milliseconds. If `immediate` is passed, trigger the function on the
-  // leading edge, instead of the trailing.
+  /*
+  返回 function 函数的防反跳版本, 将延迟函数执行在函数最后一次调用时刻的 wait 毫秒之后. 
+  对于必须在一些输入（多是一些用户操作）停止到达之后执行的行为有帮助。 例如: 渲染一个Markdown格式的评论预览, 当窗口停止改变大小之后重新计算布局, 等等.
+  传参 immediate 为 true， debounce会在 wait 时间间隔的开始调用这个函数 。在类似不小心点了提交按钮两下而提交了两次的情况下很有用。
+  var debounce = _.debounce(function(){console.log('scroll')}, 1000);
+  $(window).scroll(debounce);
+  */
   _.debounce = function(func, wait, immediate) {
     var timeout, result;
-
+    //延迟调用函数
     var later = function(context, args) {
       timeout = null;
       if (args) result = func.apply(context, args);
     };
 
     var debounced = restArgs(function(args) {
+      //如果有定时器就清空准备重新开始计时
       if (timeout) clearTimeout(timeout);
+      //如果immediate为true
       if (immediate) {
+        //此处取反，判断只有执行later之后才可以再次调用func
         var callNow = !timeout;
+        //此处添加定时器是为了防止反复调用，
         timeout = setTimeout(later, wait);
         if (callNow) result = func.apply(this, args);
       } else {
+        //回忆一下_.delay延迟调用函数，与setTimeout相似
         timeout = _.delay(later, wait, this, args);
       }
       return result;
     });
-
+    //手动清空方法
     debounced.cancel = function() {
       clearTimeout(timeout);
       timeout = null;
@@ -1242,27 +1331,47 @@
     return debounced;
   };
 
-  // Returns the first function passed as an argument to the second,
-  // allowing you to adjust arguments, run code before and after, and
-  // conditionally execute the original function.
+  /*
+  将第一个函数 function 封装到函数 wrapper 里面, 并把函数 function 作为第一个参数传给 wrapper.
+  这样可以让 wrapper 在 function 运行之前和之后 执行代码, 调整参数然后附有条件地执行
+  var hello = function(name) { return "hello: " + name; };
+  hello = _.wrap(hello, function(func) {
+    return "before, " + func("moe") + ", after";
+  });
+  hello();
+  => 'before, hello: moe, after'
+  */
   _.wrap = function(func, wrapper) {
+    //内部调用_.partial不在多说
     return _.partial(wrapper, func);
   };
 
-  // Returns a function that is the composition of a list of functions, each
-  // consuming the return value of the function that follows.
+  /*
+  返回函数集 functions 组合后的复合函数, 也就是一个函数执行完之后把返回的结果再作为参数赋给下一个函数来执行. 
+  以此类推. 在数学里, 把函数 f(), g(), 和 h() 组合起来可以得到复合函数 f(g(h()))。
+  var greet    = function(name){ return "hi: " + name; };
+  var exclaim  = function(statement){ return statement.toUpperCase() + "!"; };
+  var welcome = _.compose(greet, exclaim);
+  welcome('moe');
+  => 'hi: MOE!'
+  */
   _.compose = function() {
     var args = arguments;
+    //注意，f(g(h()))函数是由内向外执行的，所以是获取length-1
     var start = args.length - 1;
     return function() {
       var i = start;
+      //接收首次执行的arguments，计算出最内层的值
       var result = args[start].apply(this, arguments);
+      //遍历传参调用
       while (i--) result = args[i].call(this, result);
       return result;
     };
   };
 
-  // Returns a function that will only be executed on and after the Nth call.
+  /*
+  创建一个函数, 只有在运行了 count 次之后才有效果. 在处理同组异步请求返回结果时, 如果你要确保同组里所有异步请求完成之后才 执行这个函数, 这将非常有用。
+  */
   _.after = function(times, func) {
     return function() {
       if (--times < 1) {
@@ -1271,7 +1380,7 @@
     };
   };
 
-  // Returns a function that will only be executed up to (but not including) the Nth call.
+  //创建一个函数,调用不超过times 次。 当times已经达到时，最后一个函数调用的结果将被记住并返回
   _.before = function(times, func) {
     var memo;
     return function() {
@@ -1283,8 +1392,8 @@
     };
   };
 
-  // Returns a function that will be executed at most one time, no matter how
-  // often you call it. Useful for lazy initialization.
+  //创建一个只能调用一次的函数。重复调用改进的方法也没有效果，只会返回第一次执行时的结果。 作为初始化函数使用时非常有用
+  //不用再设一个boolean值来检查是否已经初始化完成
   _.once = _.partial(_.before, 2);
 
   _.restArgs = restArgs;
@@ -1715,10 +1824,6 @@
   };
 
 
-  // A (possibly faster) way to get the current timestamp as an integer.
-  _.now = Date.now || function() {
-    return new Date().getTime();
-  };
 
   // List of HTML entities for escaping.
   var escapeMap = {
